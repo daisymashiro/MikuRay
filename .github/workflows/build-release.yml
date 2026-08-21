@@ -55,31 +55,50 @@ jobs:
           echo "Installing NDK 29.0.14206865..."
           sdkmanager "ndk;29.0.14206865"
       
-      # Step 6: Cache Gradle dependencies
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            V2rayNG/.gradle
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      # Step 6: Cache Gradle dependencies (disabled temporarily for testing)
+      # Uncomment when build is stable
+      # - name: Cache Gradle dependencies
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ~/.gradle/caches
+      #       ~/.gradle/wrapper
+      #       V2rayNG/.gradle
+      #     key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-gradle-
       
       # Step 7: Make gradlew executable
       - name: Make gradlew executable
         run: chmod +x V2rayNG/gradlew
       
-      # Step 8: Build Release APK (unsigned)
+      # Step 8: Clean build artifacts and cache
+      - name: Clean build artifacts
+        run: |
+          cd V2rayNG
+          rm -rf .gradle build app/build app/.cxx
+          ./gradlew clean --no-daemon
+      
+      # Step 9: Build Release APK (unsigned) with enhanced diagnostics
       - name: Build Release APK
         run: |
           cd V2rayNG
-          ./gradlew assembleRelease --stacktrace --no-daemon
+          ./gradlew assembleRelease --no-daemon --stacktrace --info
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.compiler.execution.strategy=in-process"
       
-      # Step 9: Sign APK with r0adkll/sign-android-release
+      # Step 10: Build Release APK (Retry with clean if first attempt fails)
+      - name: Build Release APK (Retry with clean)
+        if: failure()
+        run: |
+          cd V2rayNG
+          ./gradlew clean assembleRelease --rerun-tasks --no-daemon --stacktrace
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+          GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -Dkotlin.compiler.execution.strategy=in-process"
+      
+      # Step 11: Sign APK (arm64-v8a)
       - name: Sign APK (arm64-v8a)
         id: sign_apk_arm64
         uses: r0adkll/sign-android-release@v1
@@ -92,7 +111,7 @@ jobs:
         env:
           BUILD_TOOLS_VERSION: "34.0.0"
       
-      # Step 10: Rename signed APKs with timestamp
+      # Step 12: Rename signed APKs with timestamp
       - name: Rename signed APKs
         run: |
           BUILD_DATE=$(date +%Y%m%d-%H%M)
@@ -128,7 +147,7 @@ jobs:
           # List all APKs
           ls -lh *.apk
       
-      # Step 11: Upload signed APKs as artifacts
+      # Step 13: Upload signed APKs as artifacts
       - name: Upload signed APKs
         uses: actions/upload-artifact@v4
         with:
@@ -137,7 +156,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       
-      # Step 12: Create build summary
+      # Step 14: Create build summary
       - name: Create build summary
         run: |
           echo "## 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
@@ -154,7 +173,7 @@ jobs:
           ls -lh *-release-*.apk 2>/dev/null || echo "No APK files found"
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
       
-      # Step 13: Create GitHub Release (optional, on tag push)
+      # Step 15: Create GitHub Release (optional, on tag push)
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
