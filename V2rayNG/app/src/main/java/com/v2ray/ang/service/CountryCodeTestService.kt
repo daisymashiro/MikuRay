@@ -159,7 +159,7 @@ class CountryCodeTestService : Service() {
                 SpeedtestManager.getCountryCodeThroughProxy(httpPort, timeoutMs = retryTimeoutMs)
             }
         } finally {
-            runCatching { controller.stopLoop() }
+            runCatching<Unit> { controller.stopLoop() }
         }
     }
 
