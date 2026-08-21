@@ -44,8 +44,54 @@ jobs:
         run: |
           echo "Installing NDK 29.0.14206865..."
           sdkmanager "ndk;29.0.14206865"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
       
-      # Step 6: Cache Gradle dependencies
+      # Step 6: Restore cached libhevtun
+      - name: Restore cached libhevtun
+        id: cache-libhevtun-restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ github.workspace }}/libs
+          key: libhevtun-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hev-socks5-tunnel/HEAD') }}-${{ hashFiles('compile-hevtun.sh') }}
+      
+      # Step 7: Build libhevtun native library
+      - name: Build libhevtun
+        if: steps.cache-libhevtun-restore.outputs.cache-hit != 'true'
+        run: |
+          bash compile-hevtun.sh
+      
+      # Step 8: Save libhevtun cache
+      - name: Save libhevtun
+        if: steps.cache-libhevtun-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ github.workspace }}/libs
+          key: libhevtun-${{ runner.os }}-${{ env.NDK_HOME }}-${{ hashFiles('.git/modules/hev-socks5-tunnel/HEAD') }}-${{ hashFiles('compile-hevtun.sh') }}
+      
+      # Step 9: Copy libhevtun to app/libs
+      - name: Copy libhevtun
+        run: |
+          cp -r ${{ github.workspace }}/libs ${{ github.workspace }}/V2rayNG/app
+      
+      # Step 10: Fetch AndroidLibXrayLite tag
+      - name: Fetch AndroidLibXrayLite tag
+        run: |
+          pushd AndroidLibXrayLite
+          CURRENT_TAG=$(git describe --tags --abbrev=0)
+          echo "Current tag in this repo: $CURRENT_TAG"
+          echo "CURRENT_TAG=$CURRENT_TAG" >> $GITHUB_ENV
+          popd
+      
+      # Step 11: Download libv2ray.aar
+      - name: Download libv2ray
+        uses: robinraju/release-downloader@v1.13
+        with:
+          repository: '2dust/AndroidLibXrayLite'
+          tag: ${{ env.CURRENT_TAG }}
+          fileName: 'libv2ray.aar'
+          out-file-path: V2rayNG/app/libs/
+      
+      # Step 12: Cache Gradle dependencies
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
@@ -57,11 +103,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
       
-      # Step 7: Make gradlew executable
+      # Step 13: Make gradlew executable
       - name: Make gradlew executable
         run: chmod +x V2rayNG/gradlew
       
-      # Step 8: Build Debug APK
+      # Step 14: Build Debug APK
       - name: Build Debug APK
         run: |
           cd V2rayNG
@@ -69,7 +115,7 @@ jobs:
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
       
-      # Step 9: Upload debug APKs as artifacts
+      # Step 15: Upload debug APKs as artifacts
       - name: Upload debug APKs
         uses: actions/upload-artifact@v4
         with:
@@ -78,7 +124,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       
-      # Step 10: Create build summary
+      # Step 16: Create build summary
       - name: Create build summary
         run: |
           echo "## 🔨 Debug Build Complete!" >> $GITHUB_STEP_SUMMARY
