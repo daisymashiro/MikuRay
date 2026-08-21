@@ -18,7 +18,14 @@ object SoundPlayer {
 
     private fun playSound(context: Context, resId: Int) {
         player?.release()
-        player = MediaPlayer.create(context, resId)
-        player?.start()
+        player = MediaPlayer.create(context, resId)?.apply {
+            setOnCompletionListener { mp ->
+                mp.release()
+                if (player === mp) {
+                    player = null
+                }
+            }
+            start()
+        }
     }
 }
