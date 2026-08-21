@@ -38,6 +38,7 @@ import java.util.regex.PatternSyntaxException
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var serverList = mutableListOf<String>()
+    @Volatile
     var subscriptionId: String = MmkvManager.decodeSettingsString(AppConfig.CACHE_SUBSCRIPTION_ID, "").orEmpty()
     var keywordFilter = ""
     val serversCache = mutableListOf<ServersCache>()
@@ -76,23 +77,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     @Synchronized
     fun reloadServerList() {
-        val subId = subscriptionId.ifEmpty { AppConfig.DEFAULT_SUBSCRIPTION_ID }
+        val targetSubId = subscriptionId  // Snapshot to prevent mid-execution changes
+        reloadServerListForSubscription(targetSubId)
+    }
+
+    /**
+     * Loads server list for a specific subscription ID with race condition protection.
+     * Uses snapshot of subscriptionId to ensure consistency between the data loaded
+     * and the subscription ID checked by fragment observers.
+     */
+    @Synchronized
+    private fun reloadServerListForSubscription(targetSubId: String) {
+        // Double-check: if subscription changed while we were waiting for the lock, skip stale load
+        if (subscriptionId != targetSubId) {
+            LogUtil.d(AppConfig.TAG, "Subscription changed during load, skipping stale load for: $targetSubId, current: $subscriptionId")
+            return
+        }
+
+        val subId = targetSubId.ifEmpty { AppConfig.DEFAULT_SUBSCRIPTION_ID }
         val order = MmkvManager.decodeSettingsInt("${AppConfig.PREF_SERVER_ORDER}_$subId", 0)
         if (order == 0) {
-            if (subscriptionId.isEmpty()) {
+            if (targetSubId.isEmpty()) {
                 MmkvManager.decodeSubsList().forEach { MmkvManager.restoreOriginServerList(it) }
             } else {
-                MmkvManager.restoreOriginServerList(subscriptionId)
+                MmkvManager.restoreOriginServerList(targetSubId)
             }
         }
 
-        serverList = if (subscriptionId.isEmpty()) {
+        serverList = if (targetSubId.isEmpty()) {
             MmkvManager.decodeAllServerList()
         } else {
-            MmkvManager.decodeServerList(subscriptionId)
+            MmkvManager.decodeServerList(targetSubId)
         }
 
+        LogUtil.d(AppConfig.TAG, "Loaded ${serverList.size} servers for subscription: $targetSubId")
+
         updateCache()
+        LogUtil.d(AppConfig.TAG, "Cache updated with ${serversCache.size} filtered servers")
         updateListAction.postValue(-1)
     }
 
@@ -277,11 +298,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun subscriptionIdChangedAsync(id: String) {
         if (subscriptionId != id) {
+            LogUtil.d(AppConfig.TAG, "Subscription ID changed from '$subscriptionId' to '$id'")
             subscriptionId = id
             MmkvManager.encodeSettings(AppConfig.CACHE_SUBSCRIPTION_ID, subscriptionId)
         }
+        val targetSubId = subscriptionId  // Snapshot before async to prevent race condition
         viewModelScope.launch(Dispatchers.IO) {
-            reloadServerList()
+            reloadServerListForSubscription(targetSubId)
         }
     }
 
