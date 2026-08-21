@@ -1,0 +1,167 @@
+name: Build and Sign Release APK
+
+# Trigger workflow on push to master branch or manual dispatch
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - 'V2rayNG/**'
+      - '.github/workflows/build-release.yml'
+  pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g., 2.2.9)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    name: Build and Sign Release APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      
+      # Step 2: Setup Java JDK 21
+      - name: Setup Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+      
+      # Step 3: Setup Android SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      
+      # Step 4: Accept Android SDK licenses
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+      
+      # Step 5: Install NDK (required for native code)
+      - name: Install Android NDK
+        run: |
+          echo "Installing NDK 29.0.14206865..."
+          sdkmanager "ndk;29.0.14206865"
+      
+      # Step 6: Cache Gradle dependencies
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            V2rayNG/.gradle
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+      
+      # Step 7: Make gradlew executable
+      - name: Make gradlew executable
+        run: chmod +x V2rayNG/gradlew
+      
+      # Step 8: Build Release APK (unsigned)
+      - name: Build Release APK
+        run: |
+          cd V2rayNG
+          ./gradlew assembleRelease --stacktrace --no-daemon
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
+      
+      # Step 9: Sign APK with r0adkll/sign-android-release
+      - name: Sign APK (arm64-v8a)
+        id: sign_apk_arm64
+        uses: r0adkll/sign-android-release@v1
+        with:
+          releaseDirectory: V2rayNG/app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+      
+      # Step 10: Rename signed APKs with timestamp
+      - name: Rename signed APKs
+        run: |
+          BUILD_DATE=$(date +%Y%m%d-%H%M)
+          VERSION="${{ github.event.inputs.version_name }}"
+          if [ -z "$VERSION" ]; then
+            VERSION="2.2.9"
+          fi
+          
+          cd V2rayNG/app/build/outputs/apk/release
+          
+          # Find and rename signed APKs
+          for file in *-signed.apk; do
+            if [ -f "$file" ]; then
+              # Extract ABI from filename
+              if [[ $file == *"arm64-v8a"* ]]; then
+                ABI="arm64-v8a"
+              elif [[ $file == *"armeabi-v7a"* ]]; then
+                ABI="armeabi-v7a"
+              elif [[ $file == *"x86_64"* ]]; then
+                ABI="x86_64"
+              elif [[ $file == *"x86"* ]]; then
+                ABI="x86"
+              else
+                ABI="universal"
+              fi
+              
+              NEW_NAME="MikuRay_${VERSION}-${ABI}-release-${BUILD_DATE}.apk"
+              mv "$file" "$NEW_NAME"
+              echo "Renamed: $file -> $NEW_NAME"
+            fi
+          done
+          
+          # List all APKs
+          ls -lh *.apk
+      
+      # Step 11: Upload signed APKs as artifacts
+      - name: Upload signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-Release-APKs-${{ github.run_number }}
+          path: V2rayNG/app/build/outputs/apk/release/*-release-*.apk
+          if-no-files-found: error
+          retention-days: 30
+      
+      # Step 12: Create build summary
+      - name: Create build summary
+        run: |
+          echo "## 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Build Information" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version:** $(grep 'appVersionName' V2rayNG/app/build.gradle.kts | cut -d'"' -f2)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Date:** $(date '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📱 APK Files" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cd V2rayNG/app/build/outputs/apk/release
+          ls -lh *-release-*.apk 2>/dev/null || echo "No APK files found"
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+      
+      # Step 13: Create GitHub Release (optional, on tag push)
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: V2rayNG/app/build/outputs/apk/release/*-release-*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

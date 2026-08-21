@@ -130,6 +130,15 @@ class MainActivity : HelperBaseActivity(),
     private val tabSelectedListener = object : TabLayout.OnTabSelectedListener {
         override fun onTabSelected(tab: TabLayout.Tab) {
             applyTabSelectedStyle(tab, true, tab.position, binding.tabGroup.tabCount)
+            
+            // BUGFIX: Update subscriptionId immediately on tab selection to prevent race condition
+            // where clipboard import uses stale subscriptionId before ViewPager updates it
+            val selectedSubId = groupPagerAdapter.groups.getOrNull(tab.position)?.id.orEmpty()
+            if (mainViewModel.subscriptionId != selectedSubId) {
+                mainViewModel.subscriptionId = selectedSubId
+                MmkvManager.encodeSettings(AppConfig.CACHE_SUBSCRIPTION_ID, selectedSubId)
+                LogUtil.d(AppConfig.TAG, "Tab selected: updated subscriptionId to '$selectedSubId'")
+            }
         }
 
         override fun onTabUnselected(tab: TabLayout.Tab) {

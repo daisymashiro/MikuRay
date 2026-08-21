@@ -33,6 +33,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import com.v2ray.ang.extension.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlin.jvm.Volatile
 import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
@@ -186,12 +188,17 @@ object CoreServiceManager {
         networkMonitor = null
         currentVpnInterface = null
 
+        // Bug fix #5: Use structured concurrency to ensure core fully stops before cleanup
+        // Previous fire-and-forget coroutine could leave zombie V2Ray processes
         if (isRunning()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    coreController.stopLoop()
-                } catch (e: Exception) {
-                    LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
+            runBlocking {
+                withContext(Dispatchers.IO) {
+                    try {
+                        coreController.stopLoop()
+                        LogUtil.i(AppConfig.TAG, "StartCore-Manager: V2Ray core stopped successfully")
+                    } catch (e: Exception) {
+                        LogUtil.e(AppConfig.TAG, "StartCore-Manager: Failed to stop V2Ray loop", e)
+                    }
                 }
             }
         }

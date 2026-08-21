@@ -38,6 +38,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 @SuppressLint("VpnServicePolicy")
 class CoreVpnService : VpnService(), ServiceControl {
@@ -46,12 +47,19 @@ class CoreVpnService : VpnService(), ServiceControl {
     private var tun2SocksService: Tun2SocksControl? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val isStartingLock = AtomicBoolean(false)
+    private val startingTimestamp = AtomicLong(0) // Timestamp for lock timeout detection
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     override fun onCreate() {
         super.onCreate()
         LogUtil.i(AppConfig.TAG, "StartCore-VPN: Service created")
+        
+        // FIX Bug #2: Reset lock on service creation to prevent stuck state
+        isStartingLock.set(false)
+        startingTimestamp.set(0)
+        LogUtil.i(AppConfig.TAG, "StartCore-VPN: Lock state reset on onCreate")
+        
         val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
         StrictMode.setThreadPolicy(policy)
         CoreServiceManager.serviceControl = this
@@ -122,9 +130,13 @@ class CoreVpnService : VpnService(), ServiceControl {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         NotificationManager.ensureForeground()
         val isSystemVpnStart = intent == null || intent.action == SERVICE_INTERFACE
+        
+        // FIX Bug #2: Remove premature unlockStart() call
+        // System VPN restart should rely on timeout mechanism instead of premature unlock
         if (isSystemVpnStart) {
-            unlockStart()
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: System VPN start detected, lock will timeout if stuck")
         }
+        
         if (!tryLockStart()) {
             LogUtil.w(AppConfig.TAG, "StartCore-VPN: Start already in progress")
             return START_STICKY
@@ -372,12 +384,33 @@ class CoreVpnService : VpnService(), ServiceControl {
     }
 
     fun tryLockStart(): Boolean {
-        LogUtil.w(AppConfig.TAG, "StartCore-VPN: tryLockStart: ${isStartingLock.get()}")
-        return isStartingLock.compareAndSet(false, true)
+        val now = System.currentTimeMillis()
+        val lastStart = startingTimestamp.get()
+        
+        // FIX Bug #2: Add timeout mechanism - if locked for >30 seconds, force unlock
+        if (isStartingLock.get() && lastStart > 0 && (now - lastStart) > 30_000) {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: Lock timeout detected (>30s), force unlock")
+            isStartingLock.set(false)
+            startingTimestamp.set(0)
+        }
+        
+        val lockAcquired = isStartingLock.compareAndSet(false, true)
+        if (lockAcquired) {
+            startingTimestamp.set(now)
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: tryLockStart: Lock acquired at $now")
+        } else {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: tryLockStart: Lock already held since $lastStart")
+        }
+        return lockAcquired
     }
 
     fun unlockStart() {
-        isStartingLock.set(false)
-        LogUtil.w(AppConfig.TAG, "StartCore-VPN: unlockStart")
+        val wasLocked = isStartingLock.getAndSet(false)
+        startingTimestamp.set(0)
+        if (wasLocked) {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: unlockStart: Lock released")
+        } else {
+            LogUtil.w(AppConfig.TAG, "StartCore-VPN: unlockStart: Lock was already unlocked (redundant call)")
+        }
     }
 }
