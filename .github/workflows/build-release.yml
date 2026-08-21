@@ -193,12 +193,49 @@ jobs:
           # List all APKs
           ls -lh *.apk
       
-      # Step 19: Upload signed APKs as artifacts
-      - name: Upload signed APKs
+      # Step 19: Upload signed APKs as separate artifacts by architecture
+      # arm64-v8a: Modern Android devices (2020+, 64-bit ARM) - ~35 MB
+      - name: Upload arm64-v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: MikuRay-Release-APKs-${{ github.run_number }}
-          path: V2rayNG/app/build/outputs/apk/release/*-release-*.apk
+          name: MikuRay-arm64-v8a-release
+          path: V2rayNG/app/build/outputs/apk/release/*arm64-v8a*-release-*.apk
+          if-no-files-found: error
+          retention-days: 30
+      
+      # armeabi-v7a: Older Android devices (32-bit ARM) - ~35 MB
+      - name: Upload armeabi-v7a APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-armeabi-v7a-release
+          path: V2rayNG/app/build/outputs/apk/release/*armeabi-v7a*-release-*.apk
+          if-no-files-found: error
+          retention-days: 30
+      
+      # x86_64: Android emulators, Intel/AMD devices (64-bit) - ~75 MB
+      - name: Upload x86_64 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-x86_64-release
+          path: V2rayNG/app/build/outputs/apk/release/*x86_64*-release-*.apk
+          if-no-files-found: error
+          retention-days: 30
+      
+      # x86: Older emulators (32-bit) - ~75 MB
+      - name: Upload x86 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-x86-release
+          path: V2rayNG/app/build/outputs/apk/release/*x86-release-*.apk
+          if-no-files-found: error
+          retention-days: 30
+      
+      # universal: All architectures (largest file) - ~150 MB
+      - name: Upload universal APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-universal-release
+          path: V2rayNG/app/build/outputs/apk/release/*universal*-release-*.apk
           if-no-files-found: error
           retention-days: 30
       

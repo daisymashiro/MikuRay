@@ -115,12 +115,49 @@ jobs:
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_21_X64 }}
       
-      # Step 15: Upload debug APKs as artifacts
-      - name: Upload debug APKs
+      # Step 15: Upload debug APKs as separate artifacts by architecture
+      # arm64-v8a: Modern Android devices (2020+, 64-bit ARM)
+      - name: Upload arm64-v8a debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: MikuRay-Debug-APKs-${{ github.run_number }}
-          path: V2rayNG/app/build/outputs/apk/debug/*.apk
+          name: MikuRay-arm64-v8a-debug
+          path: V2rayNG/app/build/outputs/apk/debug/*arm64-v8a*.apk
+          if-no-files-found: warn
+          retention-days: 7
+      
+      # armeabi-v7a: Older Android devices (32-bit ARM)
+      - name: Upload armeabi-v7a debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-armeabi-v7a-debug
+          path: V2rayNG/app/build/outputs/apk/debug/*armeabi-v7a*.apk
+          if-no-files-found: warn
+          retention-days: 7
+      
+      # x86_64: Android emulators, Intel/AMD devices (64-bit)
+      - name: Upload x86_64 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-x86_64-debug
+          path: V2rayNG/app/build/outputs/apk/debug/*x86_64*.apk
+          if-no-files-found: warn
+          retention-days: 7
+      
+      # x86: Older emulators (32-bit)
+      - name: Upload x86 debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-x86-debug
+          path: V2rayNG/app/build/outputs/apk/debug/*x86*.apk
+          if-no-files-found: warn
+          retention-days: 7
+      
+      # universal: All architectures (largest file)
+      - name: Upload universal debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MikuRay-universal-debug
+          path: V2rayNG/app/build/outputs/apk/debug/*universal*.apk
           if-no-files-found: warn
           retention-days: 7
       
