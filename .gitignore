@@ -67,3 +67,4 @@ Thumbs.db
 
 !gradle/wrapper/gradle-wrapper.jar
 !V2rayNG/gradle/wrapper/gradle-wrapper.jar
+keystore_temp/
