@@ -98,6 +98,7 @@ jobs:
     - name: Decode Keystore
       uses: timheuer/base64-to-file@v2.0.0
       id: android_keystore
+      if: github.event.inputs.build_type == 'release'
       with:
         fileName: "android_keystore.jks"
         encodedString: ${{ secrets.APP_KEYSTORE_BASE64 }}
@@ -109,14 +110,10 @@ jobs:
         chmod 755 gradlew
         
         if [ "${{ env.BUILD_TYPE }}" == "debug" ]; then
-          echo "Starting DEBUG build process..."
-          ./gradlew assembleDebug --console=plain \
-            -PKS_PATH="${{ steps.android_keystore.outputs.filePath }}" \
-            -PKS_PASS="${{ secrets.APP_KEYSTORE_PASSWORD }}" \
-            -PKS_ALIAS="${{ secrets.APP_KEYSTORE_ALIAS }}" \
-            -PKEY_PASS="${{ secrets.APP_KEY_PASSWORD }}"
+          echo "Starting DEBUG build process (no signing required)..."
+          ./gradlew assembleDebug --console=plain
         else
-          echo "Starting RELEASE build process..."
+          echo "Starting RELEASE build process (with signing)..."
           ./gradlew assembleRelease --console=plain \
             -PKS_PATH="${{ steps.android_keystore.outputs.filePath }}" \
             -PKS_PASS="${{ secrets.APP_KEYSTORE_PASSWORD }}" \
